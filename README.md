@@ -163,6 +163,7 @@ As screenshots do ambiente estão em `docs/imagens/` organizadas por fase.
 ---
 
 ## 👤 Autor
+Jonas Ferreira da Silva
 
 Projeto desenvolvido para demonstração de habilidades em infraestrutura corporativa.
 
