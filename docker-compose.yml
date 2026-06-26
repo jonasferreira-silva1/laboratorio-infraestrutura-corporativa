@@ -1,0 +1,151 @@
+# =============================================================
+# Home Lab TechSolutions — Stack Zabbix + GLPI
+# Uso padrão (portas no host):
+#   docker compose up -d
+#   Zabbix → http://<host>:80   (Admin / zabbix)
+#   GLPI   → http://<host>:8080 (glpi / glpi)
+#
+# O zabbix-agent sobe junto com a stack (monitora o host "Zabbix server").
+#
+# Para IPs fixos .30 e .40 (rede do lab):
+#   docker compose -f docker-compose.yml -f docker-compose.lab.yml up -d
+# =============================================================
+
+name: homelab
+
+services:
+  # ── Zabbix ────────────────────────────────────────────────
+  zabbix-db:
+    image: mysql:8.0
+    container_name: zabbix-db
+    restart: unless-stopped
+    command: >
+      mysqld
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_bin
+      --log-bin-trust-function-creators=1
+    environment:
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${ZABBIX_DB_PASSWORD:-ZabbixDB@2024!}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-RootDB@2024!}
+    volumes:
+      - zabbix-db-data:/var/lib/mysql
+    networks:
+      - zabbix-internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  zabbix-server:
+    image: zabbix/zabbix-server-mysql:ubuntu-6.4-latest
+    container_name: zabbix-server
+    restart: unless-stopped
+    depends_on:
+      zabbix-db:
+        condition: service_healthy
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${ZABBIX_DB_PASSWORD:-ZabbixDB@2024!}
+      TZ: ${TZ:-America/Sao_Paulo}
+    volumes:
+      - zabbix-server-data:/var/lib/zabbix
+    networks:
+      - zabbix-internal
+      - homelab
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-mysql:ubuntu-6.4-latest
+    container_name: zabbix-web
+    restart: unless-stopped
+    depends_on:
+      zabbix-db:
+        condition: service_healthy
+      zabbix-server:
+        condition: service_started
+    ports:
+      - "80:8080"
+    environment:
+      ZBX_SERVER_HOST: zabbix-server
+      DB_SERVER_HOST: zabbix-db
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: ${ZABBIX_DB_PASSWORD:-ZabbixDB@2024!}
+      PHP_TZ: ${TZ:-America/Sao_Paulo}
+      TZ: ${TZ:-America/Sao_Paulo}
+    networks:
+      - zabbix-internal
+      - homelab
+
+  zabbix-agent:
+    image: zabbix/zabbix-agent:ubuntu-6.4-latest
+    container_name: zabbix-agent
+    restart: unless-stopped
+    # Compartilha rede com zabbix-server para 127.0.0.1:10050 funcionar
+    network_mode: "service:zabbix-server"
+    depends_on:
+      - zabbix-server
+    environment:
+      ZBX_HOSTNAME: "Zabbix server"
+      ZBX_SERVER_HOST: 127.0.0.1
+      TZ: ${TZ:-America/Sao_Paulo}
+
+  # ── GLPI ──────────────────────────────────────────────────
+  glpi-db:
+    image: mariadb:10.11
+    container_name: glpi-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: glpi
+      MARIADB_USER: glpi
+      MARIADB_PASSWORD: ${GLPI_DB_PASSWORD:-GLPI@2024!}
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-RootDB@2024!}
+    volumes:
+      - glpi-db-data:/var/lib/mysql
+    networks:
+      - glpi-internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  glpi:
+    image: glpi/glpi:10.0
+    container_name: glpi
+    restart: unless-stopped
+    depends_on:
+      glpi-db:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    env_file:
+      - .env
+    environment:
+      GLPI_DB_HOST: glpi-db
+      TZ: ${TZ:-America/Sao_Paulo}
+    volumes:
+      - glpi-data:/var/glpi
+    networks:
+      - glpi-internal
+      - homelab
+
+networks:
+  zabbix-internal:
+    driver: bridge
+  glpi-internal:
+    driver: bridge
+  homelab:
+    driver: bridge
+
+volumes:
+  zabbix-db-data:
+  zabbix-server-data:
+  glpi-db-data:
+  glpi-data:

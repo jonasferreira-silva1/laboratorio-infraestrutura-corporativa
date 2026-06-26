@@ -1,0 +1,28 @@
+# Override para IPs fixos na rede do lab (192.168.20.0/24)
+# Requer host Linux com interface em 192.168.20.x
+#
+# Uso:
+#   cp .env.example .env
+#   # Ajustar MACVLAN_PARENT no .env
+#   docker compose -f docker-compose.yml -f docker-compose.lab.yml up -d
+
+services:
+  zabbix-web:
+    networks:
+      homelab:
+        ipv4_address: ${ZABBIX_IP:-192.168.20.30}
+
+  glpi:
+    networks:
+      homelab:
+        ipv4_address: ${GLPI_IP:-192.168.20.40}
+
+networks:
+  homelab:
+    driver: macvlan
+    driver_opts:
+      parent: ${MACVLAN_PARENT:-ens33}
+    ipam:
+      config:
+        - subnet: ${SUBNET:-192.168.20.0/24}
+          gateway: ${GATEWAY:-192.168.20.1}
